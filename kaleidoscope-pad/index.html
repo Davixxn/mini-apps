@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>만화경 드로잉</title>
+<style>
+  :root{
+    --bg:#0a0a12; --panel:#14141f; --text:#eceef5; --muted:#9296a8; --border:#262637;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",sans-serif;
+    display:flex; flex-direction:column; align-items:center; padding:18px; overflow:hidden;
+  }
+  h1{font-size:14px; font-weight:600; color:var(--muted); letter-spacing:.5px; margin:0 0 12px; text-transform:uppercase;}
+  .stage{
+    position:relative; border-radius:16px; overflow:hidden; border:1px solid var(--border);
+    box-shadow:0 20px 60px rgba(0,0,0,.5); background:#000; touch-action:none;
+  }
+  canvas{display:block; cursor:crosshair;}
+  .toolbar{
+    display:flex; flex-wrap:wrap; gap:14px; align-items:center; justify-content:center;
+    margin-top:16px; background:var(--panel); border:1px solid var(--border); border-radius:14px;
+    padding:12px 18px; max-width:640px;
+  }
+  .group{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted);}
+  input[type=range]{accent-color:#ff6b5e;}
+  input[type=color]{width:32px; height:32px; border:none; border-radius:8px; background:none; cursor:pointer; padding:0;}
+  select{
+    background:#1e1e2c; color:var(--text); border:1px solid var(--border); border-radius:8px; padding:6px 8px; font-size:12px;
+  }
+  button{
+    padding:8px 14px; border-radius:10px; border:1px solid var(--border); background:#1e1e2c; color:var(--text);
+    font-size:12px; cursor:pointer;
+  }
+  button.primary{background:#ff6b5e; border-color:#ff6b5e; color:#0a0a12; font-weight:700;}
+  .rainbow-active{background:linear-gradient(90deg,#ff5e5e,#ffd75e,#5eff8f,#5ecbff,#c15eff); border:none; color:#0a0a12; font-weight:700;}
+</style>
+</head>
+<body>
+<h1>만화경 드로잉 패드</h1>
+<div class="stage">
+  <canvas id="c" width="560" height="560"></canvas>
+</div>
+<div class="toolbar">
+  <div class="group">
+    대칭
+    <select id="slices">
+      <option value="4">4</option>
+      <option value="6" selected>6</option>
+      <option value="8">8</option>
+      <option value="12">12</option>
+      <option value="16">16</option>
+    </select>
+  </div>
+  <div class="group">
+    색상
+    <input type="color" id="color" value="#5ecbff">
+  </div>
+  <div class="group">
+    굵기
+    <input type="range" id="size" min="1" max="30" value="6">
+  </div>
+  <button id="rainbowBtn">레인보우 모드</button>
+  <button id="clearBtn">지우기</button>
+  <button id="saveBtn" class="primary">이미지 저장</button>
+</div>
+<script>
+(function(){
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height, cx = W/2, cy = H/2;
+
+  ctx.fillStyle = '#050508';
+  ctx.fillRect(0,0,W,H);
+
+  let slices = 6;
+  let color = '#5ecbff';
+  let size = 6;
+  let rainbow = false;
+  let hue = 0;
+  let drawing = false;
+  let last = null;
+
+  document.getElementById('slices').addEventListener('change', e=> slices = Number(e.target.value));
+  document.getElementById('color').addEventListener('input', e=> color = e.target.value);
+  document.getElementById('size').addEventListener('input', e=> size = Number(e.target.value));
+
+  const rainbowBtn = document.getElementById('rainbowBtn');
+  rainbowBtn.addEventListener('click', ()=>{
+    rainbow = !rainbow;
+    rainbowBtn.classList.toggle('rainbow-active', rainbow);
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', ()=>{
+    ctx.fillStyle = '#050508';
+    ctx.fillRect(0,0,W,H);
+  });
+
+  document.getElementById('saveBtn').addEventListener('click', ()=>{
+    const link = document.createElement('a');
+    link.download = 'kaleidoscope.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+
+  function getPos(e){
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: (clientX - rect.left) * (W / rect.width),
+      y: (clientY - rect.top) * (H / rect.height)
+    };
+  }
+
+  function drawSegment(x1,y1,x2,y2){
+    const strokeColor = rainbow ? `hsl(${hue}, 90%, 62%)` : color;
+    if(rainbow){ hue = (hue + 2) % 360; }
+    ctx.lineCap = 'round';
+    ctx.lineWidth = size;
+    ctx.strokeStyle = strokeColor;
+    ctx.shadowColor = strokeColor;
+    ctx.shadowBlur = size * 0.8;
+
+    const angleStep = (Math.PI*2) / slices;
+    const dx1 = x1-cx, dy1 = y1-cy, dx2 = x2-cx, dy2 = y2-cy;
+    const r1 = Math.hypot(dx1,dy1), a1 = Math.atan2(dy1,dx1);
+    const r2 = Math.hypot(dx2,dy2), a2 = Math.atan2(dy2,dx2);
+
+    for(let i=0;i<slices;i++){
+      const rot = angleStep * i;
+      // normal rotation
+      ctx.beginPath();
+      ctx.moveTo(cx + r1*Math.cos(a1+rot), cy + r1*Math.sin(a1+rot));
+      ctx.lineTo(cx + r2*Math.cos(a2+rot), cy + r2*Math.sin(a2+rot));
+      ctx.stroke();
+      // mirrored reflection
+      ctx.beginPath();
+      ctx.moveTo(cx + r1*Math.cos(-a1+rot), cy + r1*Math.sin(-a1+rot));
+      ctx.lineTo(cx + r2*Math.cos(-a2+rot), cy + r2*Math.sin(-a2+rot));
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  function start(e){
+    drawing = true;
+    last = getPos(e);
+    e.preventDefault();
+  }
+  function move(e){
+    if(!drawing) return;
+    const p = getPos(e);
+    drawSegment(last.x, last.y, p.x, p.y);
+    last = p;
+    e.preventDefault();
+  }
+  function end(){ drawing = false; last = null; }
+
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, {passive:false});
+  canvas.addEventListener('touchmove', move, {passive:false});
+  canvas.addEventListener('touchend', end);
+})();
+</script>
+</body>
+</html>

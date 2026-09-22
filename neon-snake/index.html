@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>네온 스네이크</title>
+<style>
+  :root{
+    --bg:#05060a; --panel:#0d0f18; --border:#1f2334; --text:#e8ebf5; --muted:#7b8099;
+    --snake:#5eff8f; --food:#ff5e8f; --grid:#11141f;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",sans-serif;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px;
+  }
+  h1{font-size:14px; font-weight:700; letter-spacing:2px; color:var(--muted); text-transform:uppercase; margin:0 0 12px;}
+  .hud{display:flex; gap:22px; margin-bottom:12px; font-size:13px; color:var(--muted);}
+  .hud b{color:var(--snake); font-size:15px;}
+  .stage{position:relative; border-radius:16px; overflow:hidden; border:1px solid var(--border); box-shadow:0 20px 60px rgba(0,0,0,.6);}
+  canvas{display:block; background:var(--grid);}
+  .overlay{
+    position:absolute; inset:0; background:rgba(5,6,10,.88); display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:14px; text-align:center; padding:20px;
+  }
+  .overlay.hidden{display:none;}
+  .overlay h2{margin:0; font-size:22px;}
+  .overlay p{margin:0; color:var(--muted); font-size:13px;}
+  button{
+    padding:10px 24px; border-radius:12px; border:none; background:var(--snake); color:#05060a;
+    font-weight:700; font-size:14px; cursor:pointer;
+  }
+  .hint{margin-top:14px; color:var(--muted); font-size:12px; text-align:center;}
+  .touch-controls{display:none; margin-top:16px; grid-template-columns:56px 56px 56px; grid-template-rows:56px 56px 56px; gap:6px;}
+  .touch-controls button{width:56px; height:56px; font-size:20px; background:var(--panel); color:var(--text); border:1px solid var(--border);}
+  @media (pointer:coarse){ .touch-controls{display:grid;} }
+</style>
+</head>
+<body>
+<h1>Neon Snake</h1>
+<div class="hud">
+  <div>점수 <b id="score">0</b></div>
+  <div>최고 기록 <b id="best">0</b></div>
+</div>
+<div class="stage">
+  <canvas id="c" width="400" height="400"></canvas>
+  <div class="overlay" id="overlay">
+    <h2 id="overlayTitle">네온 스네이크</h2>
+    <p id="overlayText">방향키 또는 WASD로 조작하세요</p>
+    <button id="startBtn">시작하기</button>
+  </div>
+</div>
+<div class="hint">방향키 / WASD · 스페이스바로 일시정지</div>
+<div class="touch-controls">
+  <div></div><button data-dir="up">▲</button><div></div>
+  <button data-dir="left">◀</button><div></div><button data-dir="right">▶</button>
+  <div></div><button data-dir="down">▼</button><div></div>
+</div>
+<script>
+(function(){
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const grid = 20;
+  const cells = canvas.width / grid;
+  const scoreEl = document.getElementById('score');
+  const bestEl = document.getElementById('best');
+  const overlay = document.getElementById('overlay');
+  const overlayTitle = document.getElementById('overlayTitle');
+  const overlayText = document.getElementById('overlayText');
+  const startBtn = document.getElementById('startBtn');
+
+  let best = Number(localStorage.getItem('snake_best') || 0);
+  bestEl.textContent = best;
+
+  let snake, dir, nextDir, food, score, speed, timer, running, paused;
+
+  function resetGame(){
+    snake = [{x:8,y:10},{x:7,y:10},{x:6,y:10}];
+    dir = {x:1,y:0};
+    nextDir = {x:1,y:0};
+    score = 0;
+    speed = 130;
+    scoreEl.textContent = score;
+    placeFood();
+    paused = false;
+  }
+
+  function placeFood(){
+    while(true){
+      const p = { x: Math.floor(Math.random()*cells), y: Math.floor(Math.random()*cells) };
+      if(!snake.some(s=>s.x===p.x && s.y===p.y)){ food = p; return; }
+    }
+  }
+
+  function draw(){
+    ctx.fillStyle = '#0b0d16';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    for(let i=0;i<=cells;i++){
+      ctx.beginPath(); ctx.moveTo(i*grid,0); ctx.lineTo(i*grid,canvas.height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0,i*grid); ctx.lineTo(canvas.width,i*grid); ctx.stroke();
+    }
+
+    ctx.fillStyle = '#ff5e8f';
+    ctx.shadowColor = '#ff5e8f';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(food.x*grid+grid/2, food.y*grid+grid/2, grid/2-3, 0, Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    snake.forEach((s,i)=>{
+      ctx.fillStyle = i===0 ? '#a6ffc4' : '#5eff8f';
+      ctx.shadowColor = '#5eff8f';
+      ctx.shadowBlur = i===0 ? 10 : 4;
+      ctx.fillRect(s.x*grid+1, s.y*grid+1, grid-2, grid-2);
+    });
+    ctx.shadowBlur = 0;
+  }
+
+  function step(){
+    if(paused) return;
+    dir = nextDir;
+    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+    if(head.x < 0 || head.y < 0 || head.x >= cells || head.y >= cells || snake.some(s=>s.x===head.x && s.y===head.y)){
+      gameOver();
+      return;
+    }
+
+    snake.unshift(head);
+    if(head.x === food.x && head.y === food.y){
+      score++;
+      scoreEl.textContent = score;
+      placeFood();
+      if(speed > 55){ speed -= 3; restartLoop(); }
+    } else {
+      snake.pop();
+    }
+    draw();
+  }
+
+  function restartLoop(){
+    clearInterval(timer);
+    timer = setInterval(step, speed);
+  }
+
+  function gameOver(){
+    running = false;
+    clearInterval(timer);
+    if(score > best){
+      best = score;
+      localStorage.setItem('snake_best', best);
+      bestEl.textContent = best;
+    }
+    overlayTitle.textContent = '게임 오버';
+    overlayText.textContent = `점수: ${score} · 다시 시도해보세요`;
+    startBtn.textContent = '다시 시작';
+    overlay.classList.remove('hidden');
+  }
+
+  function startGame(){
+    resetGame();
+    running = true;
+    overlay.classList.add('hidden');
+    draw();
+    restartLoop();
+  }
+
+  startBtn.addEventListener('click', startGame);
+
+  const keyMap = {
+    ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right',
+    w:'up', s:'down', a:'left', d:'right', W:'up', S:'down', A:'left', D:'right'
+  };
+  const vectors = { up:{x:0,y:-1}, down:{x:0,y:1}, left:{x:-1,y:0}, right:{x:1,y:0} };
+
+  function applyDir(name){
+    const v = vectors[name];
+    if(!v) return;
+    if(v.x === -dir.x && v.y === -dir.y) return;
+    nextDir = v;
+  }
+
+  window.addEventListener('keydown', e=>{
+    if(e.key === ' '){
+      if(running){ paused = !paused; }
+      e.preventDefault();
+      return;
+    }
+    const name = keyMap[e.key];
+    if(name){ applyDir(name); e.preventDefault(); }
+  });
+
+  document.querySelectorAll('.touch-controls button').forEach(btn=>{
+    btn.addEventListener('click', ()=> applyDir(btn.dataset.dir));
+  });
+
+  draw();
+})();
+</script>
+</body>
+</html>
